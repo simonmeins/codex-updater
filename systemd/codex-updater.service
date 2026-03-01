@@ -1,0 +1,14 @@
+[Unit]
+Description=Update Codex CLI on boot
+Documentation=https://github.com/openai/codex/releases
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/codex-updater
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
