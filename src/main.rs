@@ -10,6 +10,7 @@ use clap::Parser;
 use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
+use reqwest::{Proxy, Url};
 use semver::Version;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -22,6 +23,7 @@ const DEFAULT_ASSET_NAME: &str = "codex-x86_64-unknown-linux-gnu.tar.gz";
 const INSTALL_NAME: &str = "codex";
 const DEFAULT_TARGET_DIR: &str = "/usr/local/bin";
 const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
+const USER_AGENT_VALUE: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Parser)]
 #[command(
@@ -47,6 +49,9 @@ struct Args {
 
     #[arg(long)]
     github_token: Option<String>,
+
+    #[arg(long)]
+    socks5_proxy: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,7 +83,11 @@ fn run() -> Result<()> {
         .github_token
         .clone()
         .or_else(|| std::env::var("GITHUB_TOKEN").ok());
-    let client = build_client(&github_token)?;
+    let socks5_proxy = args
+        .socks5_proxy
+        .clone()
+        .or_else(|| std::env::var("SOCKS5_PROXY").ok());
+    let client = build_client(&github_token, socks5_proxy.as_deref())?;
     let release = fetch_latest_release(&client)?;
     let latest_version = parse_release_version(&release)?;
     let target_path = args.target_dir.join(&args.install_name);
@@ -151,9 +160,9 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn build_client(github_token: &Option<String>) -> Result<Client> {
+fn build_client(github_token: &Option<String>, socks5_proxy: Option<&str>) -> Result<Client> {
     let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(USER_AGENT, "codex-updater/0.1".parse()?);
+    headers.insert(USER_AGENT, USER_AGENT_VALUE.parse()?);
     headers.insert(ACCEPT, "application/vnd.github+json".parse()?);
 
     if let Some(token) = github_token {
@@ -164,11 +173,33 @@ fn build_client(github_token: &Option<String>) -> Result<Client> {
         );
     }
 
-    Client::builder()
-        .default_headers(headers)
-        .https_only(true)
+    let mut builder = Client::builder().default_headers(headers).https_only(true);
+
+    if let Some(proxy_url) = socks5_proxy {
+        builder = builder.proxy(build_socks5_proxy(proxy_url)?);
+    }
+
+    builder
         .build()
         .context("HTTP-Client konnte nicht erstellt werden")
+}
+
+fn build_socks5_proxy(proxy_url: &str) -> Result<Proxy> {
+    let url = Url::parse(proxy_url)
+        .with_context(|| format!("ungültige SOCKS5-Proxy-URL: '{proxy_url}'"))?;
+
+    match url.scheme() {
+        "socks5" | "socks5h" => {}
+        scheme => {
+            bail!("ungültiges Proxy-Schema '{scheme}'; erlaubt sind nur socks5:// oder socks5h://")
+        }
+    }
+
+    if url.host_str().is_none() {
+        bail!("SOCKS5-Proxy-URL enthält keinen Host");
+    }
+
+    Proxy::all(url).context("SOCKS5-Proxy konnte nicht konfiguriert werden")
 }
 
 fn fetch_latest_release(client: &Client) -> Result<Release> {
@@ -671,5 +702,31 @@ mod tests {
         let name =
             normalize_archive_entry_name(Path::new("./codex-x86_64-unknown-linux-gnu")).unwrap();
         assert_eq!(name, "codex-x86_64-unknown-linux-gnu");
+    }
+
+    #[test]
+    fn accepts_socks5_proxy_url() {
+        build_socks5_proxy("socks5://127.0.0.1:1080").unwrap();
+        build_socks5_proxy("socks5h://user:pass@proxy.example:1080").unwrap();
+    }
+
+    #[test]
+    fn rejects_non_socks_proxy_url() {
+        let error = build_socks5_proxy("http://127.0.0.1:8080").unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("erlaubt sind nur socks5:// oder socks5h://"));
+    }
+
+    #[test]
+    fn rejects_socks_proxy_without_host() {
+        let error = build_socks5_proxy("socks5://").unwrap_err();
+        assert!(error.to_string().contains("enthält keinen Host"));
+    }
+
+    #[test]
+    fn rejects_malformed_socks_proxy_url() {
+        let error = build_socks5_proxy("socks5://:1080").unwrap_err();
+        assert!(error.to_string().contains("ungültige SOCKS5-Proxy-URL"));
     }
 }

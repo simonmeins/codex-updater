@@ -36,6 +36,18 @@ Optional kann ein GitHub-Token gesetzt werden, um API-Rate-Limits zu entschärfe
 GITHUB_TOKEN=ghp_xxx sudo ./target/release/codex-updater
 ```
 
+Optional kann der gesamte GitHub-Traffic des Updaters über einen SOCKS5-Proxy laufen. Unterstützt werden `socks5://` und `socks5h://`:
+
+```bash
+sudo ./target/release/codex-updater --socks5-proxy socks5h://127.0.0.1:1080
+```
+
+Alternativ über die Umgebung:
+
+```bash
+SOCKS5_PROXY=socks5h://127.0.0.1:1080 sudo ./target/release/codex-updater
+```
+
 ## systemd beim Boot
 
 Damit das Tool beim Systemstart einmal ausgeführt wird:

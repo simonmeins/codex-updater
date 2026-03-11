@@ -1,6 +1,6 @@
 [package]
 name = "codex-updater"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -8,7 +8,7 @@ anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }
 flate2 = "1.1.9"
 libc = "0.2.182"
-reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "json", "rustls"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "json", "rustls", "socks"] }
 semver = "1.0.27"
 serde = { version = "1.0.228", features = ["derive"] }
 sha2 = "0.10.9"
