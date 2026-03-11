@@ -107,12 +107,12 @@ fn run() -> Result<()> {
         };
 
     if !needs_update {
-        println!("Codex ist aktuell. Keine Aktion erforderlich.");
+        println!("Codex is up to date. No action required.");
         return Ok(());
     }
 
     if args.check_only {
-        println!("Update verfügbar, aber --check-only wurde gesetzt.");
+        println!("An update is available, but --check-only was set.");
         return Ok(());
     }
 
@@ -124,12 +124,12 @@ fn run() -> Result<()> {
         .find(|asset| asset.name == args.asset_name)
         .with_context(|| {
             format!(
-                "Release enthält kein Asset namens '{}'. Siehe {}",
+                "Release does not contain an asset named '{}'. See {}",
                 args.asset_name, release.html_url
             )
         })?;
 
-    let workdir = TempDir::new().context("konnte kein temporäres Arbeitsverzeichnis anlegen")?;
+    let workdir = TempDir::new().context("failed to create temporary working directory")?;
     let downloaded_archive = download_asset(&client, asset, workdir.path())?;
     let extracted_binary = extract_binary_from_archive(
         &downloaded_archive,
@@ -144,17 +144,19 @@ fn run() -> Result<()> {
     match installed_version {
         Some(version) if version == latest_version => {
             println!(
-                "Codex wurde erfolgreich auf Version {} aktualisiert: {}",
+                "Codex was successfully updated to version {}: {}",
                 version,
                 target_path.display()
             );
         }
         Some(version) => {
             bail!(
-                "Installation abgeschlossen, aber die installierte Version ({version}) stimmt nicht mit der erwarteten Version ({latest_version}) überein"
+                "Installation completed, but the installed version ({version}) does not match the expected version ({latest_version})"
             );
         }
-        None => bail!("Installation abgeschlossen, aber die installierte Codex-Version konnte nicht verifiziert werden"),
+        None => {
+            bail!("Installation completed, but the installed Codex version could not be verified")
+        }
     }
 
     Ok(())
@@ -169,7 +171,7 @@ fn build_client(github_token: &Option<String>, socks5_proxy: Option<&str>) -> Re
         let value = format!("Bearer {token}");
         headers.insert(
             AUTHORIZATION,
-            value.parse().context("ungültiger Inhalt in GITHUB_TOKEN")?,
+            value.parse().context("invalid content in GITHUB_TOKEN")?,
         );
     }
 
@@ -179,38 +181,36 @@ fn build_client(github_token: &Option<String>, socks5_proxy: Option<&str>) -> Re
         builder = builder.proxy(build_socks5_proxy(proxy_url)?);
     }
 
-    builder
-        .build()
-        .context("HTTP-Client konnte nicht erstellt werden")
+    builder.build().context("failed to build HTTP client")
 }
 
 fn build_socks5_proxy(proxy_url: &str) -> Result<Proxy> {
     let url = Url::parse(proxy_url)
-        .with_context(|| format!("ungültige SOCKS5-Proxy-URL: '{proxy_url}'"))?;
+        .with_context(|| format!("invalid SOCKS5 proxy URL: '{proxy_url}'"))?;
 
     match url.scheme() {
         "socks5" | "socks5h" => {}
         scheme => {
-            bail!("ungültiges Proxy-Schema '{scheme}'; erlaubt sind nur socks5:// oder socks5h://")
+            bail!("invalid proxy scheme '{scheme}'; only socks5:// and socks5h:// are allowed")
         }
     }
 
     if url.host_str().is_none() {
-        bail!("SOCKS5-Proxy-URL enthält keinen Host");
+        bail!("SOCKS5 proxy URL does not contain a host");
     }
 
-    Proxy::all(url).context("SOCKS5-Proxy konnte nicht konfiguriert werden")
+    Proxy::all(url).context("failed to configure SOCKS5 proxy")
 }
 
 fn fetch_latest_release(client: &Client) -> Result<Release> {
     client
         .get(RELEASE_API_URL)
         .send()
-        .context("Abruf des neuesten GitHub-Releases fehlgeschlagen")?
+        .context("failed to fetch the latest GitHub release")?
         .error_for_status()
-        .context("GitHub API lieferte keinen erfolgreichen Statuscode")?
+        .context("GitHub API returned a non-success status code")?
         .json()
-        .context("GitHub-Release-Antwort konnte nicht gelesen werden")
+        .context("failed to read GitHub release response")
 }
 
 fn parse_release_version(release: &Release) -> Result<Version> {
@@ -218,7 +218,7 @@ fn parse_release_version(release: &Release) -> Result<Version> {
         .or_else(|| extract_semver(&release.tag_name))
         .with_context(|| {
             format!(
-                "konnte keine SemVer-Version aus Release '{}' / '{}' lesen",
+                "failed to parse a SemVer version from release '{}' / '{}'",
                 release.name, release.tag_name
             )
         })
@@ -232,12 +232,12 @@ fn detect_installed_version(target_path: &Path) -> Result<Option<Version>> {
     let output = Command::new(target_path)
         .arg("--version")
         .output()
-        .with_context(|| format!("konnte '{}' nicht ausführen", target_path.display()))?;
+        .with_context(|| format!("failed to execute '{}'", target_path.display()))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!(
-            "'{} --version' schlug fehl mit Status {}: {}",
+            "'{} --version' failed with status {}: {}",
             target_path.display(),
             output.status,
             stderr.trim()
@@ -255,7 +255,7 @@ fn detect_installed_version(target_path: &Path) -> Result<Option<Version>> {
     extract_semver(combined)
         .with_context(|| {
             format!(
-                "konnte keine Codex-Version aus '{}' lesen: {}",
+                "failed to parse Codex version from '{}': {}",
                 target_path.display(),
                 combined.trim()
             )
@@ -271,7 +271,7 @@ fn print_status(
 ) {
     match current {
         Some(current) => println!(
-            "Installiert: {} ({}) | Verfügbar: {} | Quelle: {}",
+            "Installed: {} ({}) | Available: {} | Source: {}",
             current,
             target_path.display(),
             latest,
@@ -282,7 +282,7 @@ fn print_status(
             }
         ),
         None => println!(
-            "Installiert: nicht vorhanden ({}) | Verfügbar: {} | Quelle: {}",
+            "Installed: not present ({}) | Available: {} | Source: {}",
             target_path.display(),
             latest,
             if release.html_url.is_empty() {
@@ -297,18 +297,18 @@ fn print_status(
 fn ensure_root() -> Result<()> {
     let euid = unsafe { libc::geteuid() };
     if euid != 0 {
-        bail!("für die Installation nach /usr/local/bin sind Root-Rechte erforderlich; bitte mit sudo ausführen");
+        bail!("root privileges are required to install to /usr/local/bin; please run with sudo");
     }
     Ok(())
 }
 
 fn download_asset(client: &Client, asset: &Asset, workdir: &Path) -> Result<PathBuf> {
     if asset.size == 0 {
-        bail!("GitHub meldet eine leere Datei für '{}'", asset.name);
+        bail!("GitHub reported an empty file for '{}'", asset.name);
     }
     if asset.size > MAX_DOWNLOAD_BYTES {
         bail!(
-            "Asset '{}' ist mit {} Bytes größer als das Sicherheitslimit von {} Bytes",
+            "asset '{}' is {} bytes, which exceeds the safety limit of {} bytes",
             asset.name,
             asset.size,
             MAX_DOWNLOAD_BYTES
@@ -318,7 +318,7 @@ fn download_asset(client: &Client, asset: &Asset, workdir: &Path) -> Result<Path
     let destination = workdir.join(&asset.name);
     let file = File::create(&destination).with_context(|| {
         format!(
-            "konnte temporäre Datei '{}' nicht anlegen",
+            "failed to create temporary file '{}'",
             destination.display()
         )
     })?;
@@ -326,19 +326,14 @@ fn download_asset(client: &Client, asset: &Asset, workdir: &Path) -> Result<Path
     let mut response = client
         .get(&asset.browser_download_url)
         .send()
-        .with_context(|| {
-            format!(
-                "Download von '{}' fehlgeschlagen",
-                asset.browser_download_url
-            )
-        })?
+        .with_context(|| format!("failed to download '{}'", asset.browser_download_url))?
         .error_for_status()
-        .context("Download lieferte keinen erfolgreichen Statuscode")?;
+        .context("download returned a non-success status code")?;
 
     if let Some(content_length) = response.content_length() {
         if content_length != asset.size {
             bail!(
-                "GitHub meldet unterschiedliche Größen: API={} Bytes, HTTP={} Bytes",
+                "GitHub reported mismatched sizes: API={} bytes, HTTP={} bytes",
                 asset.size,
                 content_length
             );
@@ -352,33 +347,33 @@ fn download_asset(client: &Client, asset: &Asset, workdir: &Path) -> Result<Path
     loop {
         let read = response
             .read(&mut buffer)
-            .context("konnte Download nicht lesen")?;
+            .context("failed to read download")?;
         if read == 0 {
             break;
         }
         total_written += read as u64;
         if total_written > MAX_DOWNLOAD_BYTES {
             bail!(
-                "Download überschreitet das Sicherheitslimit von {} Bytes",
+                "download exceeds the safety limit of {} bytes",
                 MAX_DOWNLOAD_BYTES
             );
         }
         writer
             .write_all(&buffer[..read])
-            .context("konnte Download nicht in die temporäre Datei schreiben")?;
+            .context("failed to write download to temporary file")?;
         hasher.update(&buffer[..read]);
     }
 
-    writer.flush().context("konnte Download nicht flushen")?;
+    writer.flush().context("failed to flush download")?;
     writer
         .into_inner()
-        .context("konnte Dateihandle nach dem Download nicht freigeben")?
+        .context("failed to release file handle after download")?
         .sync_all()
-        .context("konnte heruntergeladene Datei nicht synchronisieren")?;
+        .context("failed to sync downloaded file")?;
 
     if total_written != asset.size {
         bail!(
-            "Download-Größe stimmt nicht: erwartet {} Bytes, erhalten {} Bytes",
+            "download size mismatch: expected {} bytes, received {} bytes",
             asset.size,
             total_written
         );
@@ -398,7 +393,7 @@ fn verify_sha256_digest(actual_digest: impl AsRef<[u8]>, expected: &str) -> Resu
         .to_ascii_lowercase();
     let actual = to_lower_hex(actual_digest.as_ref());
     if actual != expected {
-        bail!("SHA-256-Prüfsumme stimmt nicht überein");
+        bail!("SHA-256 digest mismatch");
     }
     Ok(())
 }
@@ -411,7 +406,7 @@ fn extract_binary_from_archive(
 ) -> Result<PathBuf> {
     let mut archive = Archive::new(GzDecoder::new(
         File::open(archive_path)
-            .with_context(|| format!("konnte Archiv '{}' nicht öffnen", archive_path.display()))?,
+            .with_context(|| format!("failed to open archive '{}'", archive_path.display()))?,
     ));
     let extracted_path = workdir.join(install_name);
     let mut found_binary = false;
@@ -419,19 +414,19 @@ fn extract_binary_from_archive(
 
     for entry in archive
         .entries()
-        .context("konnte Archivinhalt nicht lesen")?
+        .context("failed to read archive contents")?
     {
-        let mut entry = entry.context("konnte Archiveintrag nicht lesen")?;
+        let mut entry = entry.context("failed to read archive entry")?;
         let entry_type = entry.header().entry_type();
         let entry_path = entry
             .path()
-            .context("konnte Archivpfad nicht lesen")?
+            .context("failed to read archive path")?
             .into_owned();
         let normalized_name = normalize_archive_entry_name(&entry_path)?;
 
         if !is_expected_archive_binary(&normalized_name, archive_stem.as_deref(), install_name) {
             bail!(
-                "unerwarteter Inhalt im Archiv: '{}' (erwartet nur '{}')",
+                "unexpected archive content: '{}' (expected only '{}')",
                 entry_path.display(),
                 archive_stem.as_deref().unwrap_or(install_name)
             );
@@ -439,34 +434,32 @@ fn extract_binary_from_archive(
 
         if !entry_type.is_file() {
             bail!(
-                "unerwarteter Archivtyp für '{}': nur reguläre Dateien sind erlaubt",
+                "unexpected archive entry type for '{}': only regular files are allowed",
                 entry_path.display()
             );
         }
 
         if found_binary {
-            bail!("Archiv enthält mehrere passende Binärdateien");
+            bail!("archive contains multiple matching binaries");
         }
 
         let mut out = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&extracted_path)
-            .with_context(|| format!("konnte '{}' nicht anlegen", extracted_path.display()))?;
-        io::copy(&mut entry, &mut out)
-            .context("konnte Binärdatei nicht aus dem Archiv extrahieren")?;
-        out.sync_all()
-            .context("konnte extrahierte Binärdatei nicht synchronisieren")?;
+            .with_context(|| format!("failed to create '{}'", extracted_path.display()))?;
+        io::copy(&mut entry, &mut out).context("failed to extract binary from archive")?;
+        out.sync_all().context("failed to sync extracted binary")?;
         found_binary = true;
     }
 
     if !found_binary {
-        bail!("Archiv enthält keine installierbare Binärdatei");
+        bail!("archive does not contain an installable binary");
     }
 
     fs::set_permissions(&extracted_path, fs::Permissions::from_mode(0o755)).with_context(|| {
         format!(
-            "konnte Rechte für '{}' nicht setzen",
+            "failed to set permissions on '{}'",
             extracted_path.display()
         )
     })?;
@@ -485,7 +478,7 @@ fn normalize_archive_entry_name(entry_path: &Path) -> Result<String> {
             Component::Normal(part) => parts.push(part.to_string_lossy().into_owned()),
             Component::CurDir => {}
             _ => bail!(
-                "Archiv enthält einen unsicheren Pfad: '{}'",
+                "archive contains an unsafe path: '{}'",
                 entry_path.display()
             ),
         }
@@ -493,7 +486,7 @@ fn normalize_archive_entry_name(entry_path: &Path) -> Result<String> {
 
     match parts.as_slice() {
         [name] => Ok(name.clone()),
-        _ => bail!("Archivpfad ist nicht flach: '{}'", entry_path.display()),
+        _ => bail!("archive path is not flat: '{}'", entry_path.display()),
     }
 }
 
@@ -507,18 +500,12 @@ fn is_expected_archive_binary(
 
 fn verify_extracted_binary(binary_path: &Path, expected_version: &Version) -> Result<()> {
     let metadata = fs::metadata(binary_path)
-        .with_context(|| format!("konnte '{}' nicht prüfen", binary_path.display()))?;
+        .with_context(|| format!("failed to inspect '{}'", binary_path.display()))?;
     if !metadata.is_file() {
-        bail!(
-            "extrahierter Pfad '{}' ist keine Datei",
-            binary_path.display()
-        );
+        bail!("extracted path '{}' is not a file", binary_path.display());
     }
     if metadata.len() == 0 {
-        bail!(
-            "extrahierte Binärdatei '{}' ist leer",
-            binary_path.display()
-        );
+        bail!("extracted binary '{}' is empty", binary_path.display());
     }
 
     let output = Command::new(binary_path)
@@ -526,14 +513,14 @@ fn verify_extracted_binary(binary_path: &Path, expected_version: &Version) -> Re
         .output()
         .with_context(|| {
             format!(
-                "konnte '{}' nicht zur Verifikation ausführen",
+                "failed to execute '{}' for verification",
                 binary_path.display()
             )
         })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!(
-            "extrahierte Binärdatei konnte nicht gestartet werden ({}): {}",
+            "extracted binary could not be started ({}): {}",
             output.status,
             stderr.trim()
         );
@@ -542,13 +529,13 @@ fn verify_extracted_binary(binary_path: &Path, expected_version: &Version) -> Re
     let stdout = String::from_utf8_lossy(&output.stdout);
     let version = extract_semver(&stdout).with_context(|| {
         format!(
-            "konnte keine Version aus der extrahierten Binärdatei lesen: {}",
+            "failed to parse version from extracted binary: {}",
             stdout.trim()
         )
     })?;
     if &version != expected_version {
         bail!(
-            "Version der extrahierten Binärdatei stimmt nicht: erwartet {}, erhalten {}",
+            "extracted binary version mismatch: expected {}, got {}",
             expected_version,
             version
         );
@@ -560,10 +547,10 @@ fn verify_extracted_binary(binary_path: &Path, expected_version: &Version) -> Re
 fn install_binary_atomically(source: &Path, target: &Path) -> Result<()> {
     let target_dir = target
         .parent()
-        .context("Zielpfad hat kein übergeordnetes Verzeichnis")?;
+        .context("target path has no parent directory")?;
     fs::create_dir_all(target_dir).with_context(|| {
         format!(
-            "konnte Zielverzeichnis '{}' nicht anlegen",
+            "failed to create target directory '{}'",
             target_dir.display()
         )
     })?;
@@ -578,7 +565,7 @@ fn install_binary_atomically(source: &Path, target: &Path) -> Result<()> {
 
     fs::rename(temp_target.path(), target).with_context(|| {
         format!(
-            "konnte '{}' nicht nach '{}' verschieben",
+            "failed to move '{}' to '{}'",
             temp_target.path().display(),
             target.display()
         )
@@ -600,39 +587,34 @@ fn unique_temp_target(target_dir: &Path, file_name: &OsStr) -> Result<NamedTempF
         .tempfile_in(target_dir)
         .with_context(|| {
             format!(
-                "konnte keine temporäre Zieldatei in '{}' anlegen",
+                "failed to create temporary target file in '{}'",
                 target_dir.display()
             )
         })
 }
 
 fn copy_with_permissions(source: &Path, target: &Path) -> Result<()> {
-    let mut input = File::open(source)
-        .with_context(|| format!("konnte '{}' nicht öffnen", source.display()))?;
+    let mut input =
+        File::open(source).with_context(|| format!("failed to open '{}'", source.display()))?;
     let mut output = OpenOptions::new()
         .write(true)
         .truncate(true)
         .open(target)
-        .with_context(|| format!("konnte '{}' nicht schreiben", target.display()))?;
-    io::copy(&mut input, &mut output).context("konnte Binärdatei nicht ins Ziel kopieren")?;
+        .with_context(|| format!("failed to write '{}'", target.display()))?;
+    io::copy(&mut input, &mut output).context("failed to copy binary into target")?;
     output
         .sync_all()
-        .with_context(|| format!("konnte '{}' nicht synchronisieren", target.display()))?;
+        .with_context(|| format!("failed to sync '{}'", target.display()))?;
     fs::set_permissions(target, fs::Permissions::from_mode(0o755))
-        .with_context(|| format!("konnte Rechte für '{}' nicht setzen", target.display()))?;
+        .with_context(|| format!("failed to set permissions on '{}'", target.display()))?;
     Ok(())
 }
 
 fn sync_directory(path: &Path) -> Result<()> {
     File::open(path)
-        .with_context(|| format!("konnte Verzeichnis '{}' nicht öffnen", path.display()))?
+        .with_context(|| format!("failed to open directory '{}'", path.display()))?
         .sync_all()
-        .with_context(|| {
-            format!(
-                "konnte Verzeichnis '{}' nicht synchronisieren",
-                path.display()
-            )
-        })
+        .with_context(|| format!("failed to sync directory '{}'", path.display()))
 }
 
 fn extract_semver(input: &str) -> Option<Version> {
@@ -715,18 +697,18 @@ mod tests {
         let error = build_socks5_proxy("http://127.0.0.1:8080").unwrap_err();
         assert!(error
             .to_string()
-            .contains("erlaubt sind nur socks5:// oder socks5h://"));
+            .contains("only socks5:// and socks5h:// are allowed"));
     }
 
     #[test]
     fn rejects_socks_proxy_without_host() {
         let error = build_socks5_proxy("socks5://").unwrap_err();
-        assert!(error.to_string().contains("enthält keinen Host"));
+        assert!(error.to_string().contains("does not contain a host"));
     }
 
     #[test]
     fn rejects_malformed_socks_proxy_url() {
         let error = build_socks5_proxy("socks5://:1080").unwrap_err();
-        assert!(error.to_string().contains("ungültige SOCKS5-Proxy-URL"));
+        assert!(error.to_string().contains("invalid SOCKS5 proxy URL"));
     }
 }
